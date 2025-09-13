@@ -46,16 +46,25 @@ Usage
     --duplicate-threshold 5 \
     --blur-threshold 100.0 \
     --blur-folder blurred \
+    --partial-blur-folder partialBlurred \
+    --slight-blur-folder slightlyBlurred \
     --duplicate-folder duplicate \
     --extensions .jpg,.jpeg \
     --recursive \
     --output-dir /path/to/output \
     --max-workers 8 \
+    --blur-on faces \
+    --partial-blur-min-percent 50 \
     --dry-run
 
 How it works
 - Duplicate detection via perceptual hashing (pHash) with a Hamming-distance threshold.
 - Blur detection via variance of Laplacian with a configurable threshold.
+- Face-aware blur: with `--blur-on faces` (default), blur decisions are based on human faces only:
+  - 100% faces blurred → moved to `--blur-folder`.
+  - 50–99% faces blurred → moved to `--partial-blur-folder` (min percent configurable).
+  - 1–49% faces blurred → moved to `--slight-blur-folder`.
+  - 0 faces detected → no face-blur action.
 - Config flag `prefer_duplicate_over_blur` controls which classification wins when both apply.
 - Uses concurrency for performance and a progress bar during analysis.
 
@@ -66,4 +75,3 @@ Notes
 Troubleshooting
 - If OpenCV fails to read certain images, ensure files aren’t corrupt and that `opencv-python` is installed.
 - On Windows paths, quote arguments containing spaces.
-

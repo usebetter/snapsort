@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -77,6 +78,36 @@ def run(config: Config) -> int:
             set_face_cascade_path(config.face_cascade_path)
         except Exception:
             logger.warning("Failed to set custom face cascade path: %s", config.face_cascade_path)
+
+    # Preflight permission checks to fail early instead of after long analysis
+    def _writable_for_create_or_write(p: Path) -> bool:
+        try:
+            if p.exists():
+                return os.access(p, os.W_OK | os.X_OK)
+            parent = p.parent if p.parent.exists() else p.parent
+            return os.access(parent, os.W_OK | os.X_OK)
+        except Exception:
+            return False
+
+    base_target = config.base_output_dir
+    if not config.dry_run:
+        if not _writable_for_create_or_write(base_target):
+            logger.error(
+                "Output directory is not writable: %s. Use --output-dir to a writable location or fix permissions.",
+                base_target,
+            )
+            logger.error(
+                "Tip: On macOS, you may need to grant Terminal Full Disk Access if targeting Desktop/Downloads."
+            )
+            raise SystemExit(2)
+        if not config.keep_originals:
+            # Moving requires permission to remove from the input directory
+            if not os.access(config.input_dir, os.W_OK | os.X_OK):
+                logger.error(
+                    "Input directory is not writable for moving files: %s. Either fix permissions or use --keep-originals or choose a different --output-dir.",
+                    config.input_dir,
+                )
+                raise SystemExit(2)
 
     paths = discover_images(config, exclude_dirs=exclude)
     total = len(paths)

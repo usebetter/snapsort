@@ -1,5 +1,7 @@
 .venv
 .venv/
 .venv/*
+.venv/*
 test-dir
 test-dir/*
+sudo chown -R \"$USER\":staff ~/Desktop/Murthy

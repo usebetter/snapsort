@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import threading
 from pathlib import Path
 from typing import Optional
 
@@ -18,20 +19,31 @@ class AnalysisResult:
     faces_variances: Optional[list[float]] = None
     error: Optional[str] = None
 
-_FACE_CASCADE = None  # type: ignore
+# Each thread must use its own CascadeClassifier instance — OpenCV's
+# CascadeClassifier is not thread-safe when shared. Use thread-local storage.
+_TL = threading.local()
 _FACE_CASCADE_OVERRIDE_PATH: Optional[str] = None
 
 
 def set_face_cascade_path(path: Optional[Path]) -> None:
-    global _FACE_CASCADE_OVERRIDE_PATH, _FACE_CASCADE
+    global _FACE_CASCADE_OVERRIDE_PATH
     _FACE_CASCADE_OVERRIDE_PATH = str(path) if path is not None else None
-    _FACE_CASCADE = None  # reset so it reloads
+    # Reset any thread-local cached classifier so new path takes effect
+    try:
+        _TL.cascade = None  # type: ignore[attr-defined]
+    except Exception:
+        pass
 
 
 def _get_face_cascade() -> Optional[cv2.CascadeClassifier]:
-    global _FACE_CASCADE
-    if _FACE_CASCADE is not None:
-        return _FACE_CASCADE
+    # Return a per-thread CascadeClassifier instance. Creating the classifier
+    # is cheap compared to I/O, and avoids crashes from sharing across threads.
+    try:
+        cascade = getattr(_TL, "cascade", None)
+    except Exception:
+        cascade = None
+    if cascade is not None:
+        return cascade
     try:
         # Use override if provided, else built-in OpenCV haarcascades path
         if _FACE_CASCADE_OVERRIDE_PATH:
@@ -41,7 +53,7 @@ def _get_face_cascade() -> Optional[cv2.CascadeClassifier]:
         cascade = cv2.CascadeClassifier(cascade_path)
         if cascade.empty():
             return None
-        _FACE_CASCADE = cascade
+        _TL.cascade = cascade
         return cascade
     except Exception:
         return None
