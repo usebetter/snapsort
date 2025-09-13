@@ -1,0 +1,211 @@
+from __future__ import annotations
+
+import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+from tqdm import tqdm
+import imagehash
+
+from .config import Config
+from .scanner import discover_images
+from .analyzer import analyze_image, AnalysisResult, set_face_cascade_path
+from .mover import MovePlan, ensure_dir, move_or_copy
+
+
+logger = logging.getLogger("snapsort")
+
+
+@dataclass(slots=True)
+class DupGroup:
+    rep_hash: imagehash.ImageHash
+    canonical_index: int
+    canonical_path: Path
+    members: List[int]
+
+
+def _group_duplicates(results: List[AnalysisResult], threshold: int) -> Tuple[List[DupGroup], Dict[Path, bool]]:
+    groups: List[DupGroup] = []
+    duplicate_map: Dict[Path, bool] = {}
+
+    for idx, res in enumerate(results):
+        if res.phash is None:
+            continue
+        # Find nearest representative
+        min_dist = None
+        min_gi = None
+        for gi, g in enumerate(groups):
+            dist = g.rep_hash - res.phash
+            if min_dist is None or dist < min_dist:
+                min_dist = dist
+                min_gi = gi
+        if min_dist is None or min_dist > threshold:
+            # Create new group with this as canonical
+            groups.append(DupGroup(rep_hash=res.phash, canonical_index=idx, canonical_path=res.path, members=[idx]))
+        else:
+            g = groups[min_gi]
+            g.members.append(idx)
+            # Only non-canonical members are duplicates
+            duplicate_map[res.path] = True
+
+    return groups, duplicate_map
+
+
+def run(config: Config) -> int:
+    # Determine base and excluded directories to prevent re-processing moved files
+    base_output = config.base_output_dir
+    blur_dir = base_output / config.blur_folder_name
+    partial_blur_dir = base_output / config.partial_blur_folder_name
+    slight_blur_dir = base_output / config.slight_blur_folder_name
+    dup_dir = base_output / config.duplicate_folder_name
+    exclude = []
+    # Only exclude if they are within the input directory
+    for d in (blur_dir, partial_blur_dir, slight_blur_dir, dup_dir):
+        try:
+            if d.resolve().is_relative_to(config.input_dir.resolve()):
+                exclude.append(d)
+        except AttributeError:
+            # py310+ has is_relative_to; safeguard for compatibility
+            if str(d.resolve()).startswith(str(config.input_dir.resolve())):
+                exclude.append(d)
+
+    # Configure face cascade if provided
+    if config.face_cascade_path is not None:
+        try:
+            set_face_cascade_path(config.face_cascade_path)
+        except Exception:
+            logger.warning("Failed to set custom face cascade path: %s", config.face_cascade_path)
+
+    paths = discover_images(config, exclude_dirs=exclude)
+    total = len(paths)
+    if total == 0:
+        logger.info("No images found in %s matching extensions %s", config.input_dir, config.allowed_extensions)
+        return 0
+
+    logger.info("Scanning %d images...", total)
+
+    results_by_path: Dict[Path, AnalysisResult] = {}
+
+    with ThreadPoolExecutor(max_workers=config.max_workers) as ex:
+        futures = {ex.submit(analyze_image, p, do_face_analysis=(config.blur_on == "faces")): p for p in paths}
+        for fut in tqdm(as_completed(futures), total=total, desc="Analyzing", unit="img"):
+            p = futures[fut]
+            try:
+                res = fut.result()
+            except Exception as e:  # Defensive: shouldn't normally happen
+                res = AnalysisResult(path=p, phash=None, blur_variance=None, error=str(e))
+            results_by_path[p] = res
+
+    # Preserve deterministic order: same as paths
+    results: List[AnalysisResult] = [results_by_path[p] for p in paths]
+
+    error_count = sum(1 for r in results if r.error)
+    if error_count:
+        logger.warning("Encountered %d errors while reading images; they will be skipped.", error_count)
+
+    # Group duplicates based on pHash
+    groups, duplicate_map = _group_duplicates(results, threshold=config.duplicate_threshold)
+    duplicate_groups = sum(1 for g in groups if len(g.members) > 1)
+
+    # Plan moves
+    plans: List[MovePlan] = []
+    blurred_count = 0
+    partial_blurred_count = 0
+    slightly_blurred_count = 0
+    duplicates_count = 0
+
+    for r in results:
+        if r.error:
+            continue
+        is_dup = duplicate_map.get(r.path, False)
+        reason: Optional[str] = None
+
+        # Blur classification
+        blur_reason: Optional[str] = None
+        if config.blur_on == "image":
+            is_blur = (r.blur_variance is not None) and (r.blur_variance < config.blur_threshold)
+            if is_blur:
+                blur_reason = "blurred"
+        else:  # faces
+            face_vars = r.faces_variances or []
+            face_count = len(face_vars)
+            if face_count > 0:
+                blurred_faces = sum(1 for v in face_vars if v < config.blur_threshold)
+                if blurred_faces == face_count:
+                    blur_reason = "blurred"
+                else:
+                    percent = (blurred_faces / face_count) * 100.0
+                    if percent >= config.partial_blur_min_percent:
+                        blur_reason = "partialBlurred"
+                    elif blurred_faces > 0:
+                        blur_reason = "slightlyBlurred"
+
+        # Combine with duplicate precedence
+        if is_dup and blur_reason:
+            reason = "duplicate" if config.prefer_duplicate_over_blur else blur_reason
+        elif is_dup:
+            reason = "duplicate"
+        elif blur_reason:
+            reason = blur_reason
+        if not reason:
+            continue
+        if reason == "duplicate":
+            dest_dir = dup_dir
+        elif reason == "blurred":
+            dest_dir = blur_dir
+        elif reason == "partialBlurred":
+            dest_dir = partial_blur_dir
+        else:  # slightlyBlurred
+            dest_dir = slight_blur_dir
+        dest = dest_dir / r.path.name
+        plans.append(MovePlan(src=r.path, dest=dest, reason=reason))
+
+    # Execute plans
+    if not config.dry_run:
+        # Create target folders up front
+        ensure_dir(blur_dir)
+        ensure_dir(partial_blur_dir)
+        ensure_dir(slight_blur_dir)
+        ensure_dir(dup_dir)
+
+    for plan in tqdm(plans, total=len(plans), desc=("Copying" if config.keep_originals else "Moving"), unit="file"):
+        if config.dry_run:
+            logger.info("[DRY-RUN] %-9s: %s -> %s", plan.reason, plan.src, plan.dest)
+        else:
+            try:
+                moved_path = move_or_copy(plan, copy=config.keep_originals)
+                if plan.reason == "duplicate":
+                    duplicates_count += 1
+                elif plan.reason == "blurred":
+                    blurred_count += 1
+                elif plan.reason == "partialBlurred":
+                    partial_blurred_count += 1
+                elif plan.reason == "slightlyBlurred":
+                    slightly_blurred_count += 1
+                logger.debug("%s -> %s", plan.src, moved_path)
+            except Exception as e:
+                error_count += 1
+                logger.warning("Failed to %s %s -> %s: %s", "copy" if config.keep_originals else "move", plan.src, plan.dest, e)
+
+    # Summary
+    if config.dry_run:
+        # Count from plans
+        blurred_count = sum(1 for p in plans if p.reason == "blurred")
+        partial_blurred_count = sum(1 for p in plans if p.reason == "partialBlurred")
+        slightly_blurred_count = sum(1 for p in plans if p.reason == "slightlyBlurred")
+        duplicates_count = sum(1 for p in plans if p.reason == "duplicate")
+
+    logger.info(
+        "Summary: scanned=%d, blurred=%d, partial=%d, slight=%d, duplicates=%d (groups=%d), errors=%d",
+        total,
+        blurred_count,
+        partial_blurred_count,
+        slightly_blurred_count,
+        duplicates_count,
+        duplicate_groups,
+        error_count,
+    )
+
+    return 0

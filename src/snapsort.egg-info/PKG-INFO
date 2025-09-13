@@ -1,0 +1,69 @@
+Metadata-Version: 2.4
+Name: snapsort
+Version: 0.1.0
+Summary: Organize images by duplicates and blurriness
+Author: snapSort
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: Pillow>=10.0.0
+Requires-Dist: imagehash>=4.3.1
+Requires-Dist: opencv-python>=4.9.0.0
+Requires-Dist: numpy>=1.26.0
+Requires-Dist: tqdm>=4.66.0
+Requires-Dist: rich>=13.7.0
+
+snapSort — Python image organizer (MVP)
+
+Overview
+- Organizes .jpg/.jpeg images by moving or copying them into subfolders based on analysis.
+- Duplicate/near-duplicate detection via perceptual hashing (pHash) from imagehash/Pillow.
+- Blurred detection via variance of Laplacian (OpenCV) with a configurable threshold.
+- Priority between duplicate vs blurred classification is configurable.
+
+Requirements
+- Python 3.10+
+
+Installation
+- Create and activate a virtual environment, then install requirements and the package:
+
+  bash
+  python -m venv .venv
+  source .venv/bin/activate  # Windows: .venv\Scripts\activate
+  pip install -r requirements.txt
+  pip install -e .
+
+Usage
+- Basic:
+
+  bash
+  snapsort --input-dir /path/to/photos
+
+- Common options:
+
+  bash
+  snapsort \
+    --input-dir /path/to/photos \
+    --duplicate-threshold 5 \
+    --blur-threshold 100.0 \
+    --blur-folder blurred \
+    --duplicate-folder duplicate \
+    --extensions .jpg,.jpeg \
+    --recursive \
+    --output-dir /path/to/output \
+    --max-workers 8 \
+    --dry-run
+
+How it works
+- Duplicate detection via perceptual hashing (pHash) with a Hamming-distance threshold.
+- Blur detection via variance of Laplacian with a configurable threshold.
+- Config flag `prefer_duplicate_over_blur` controls which classification wins when both apply.
+- Uses concurrency for performance and a progress bar during analysis.
+
+Notes
+- Large folders supported; uses a ThreadPoolExecutor with optional `--max-workers`.
+- `--dry-run` prints planned operations without changing files.
+
+Troubleshooting
+- If OpenCV fails to read certain images, ensure files aren’t corrupt and that `opencv-python` is installed.
+- On Windows paths, quote arguments containing spaces.
+

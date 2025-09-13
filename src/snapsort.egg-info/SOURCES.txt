@@ -1,0 +1,16 @@
+README.md
+pyproject.toml
+src/snapsort/__init__.py
+src/snapsort/__main__.py
+src/snapsort/analyzer.py
+src/snapsort/cli.py
+src/snapsort/config.py
+src/snapsort/mover.py
+src/snapsort/runner.py
+src/snapsort/scanner.py
+src/snapsort.egg-info/PKG-INFO
+src/snapsort.egg-info/SOURCES.txt
+src/snapsort.egg-info/dependency_links.txt
+src/snapsort.egg-info/entry_points.txt
+src/snapsort.egg-info/requires.txt
+src/snapsort.egg-info/top_level.txt
