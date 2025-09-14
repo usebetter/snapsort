@@ -1,5 +1,8 @@
 name: build-macos-and-release
 
+permissions:
+  contents: write
+
 on:
   push:
     tags: ["v*"]
@@ -75,4 +78,3 @@ jobs:
         with:
           files: |
             snapsort-macos-x86_64.7z
-
