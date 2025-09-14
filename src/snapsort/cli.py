@@ -41,6 +41,13 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--blur-on", type=str, choices=["faces", "image"], default="faces", help="Blur classification target: 'faces' or full 'image'")
     p.add_argument("--partial-blur-min-percent", type=float, default=50.0, help="Minimum percent of blurred faces to classify as partially blurred (100%% => fully blurred)")
     p.add_argument("--face-cascade", type=str, default=None, help="Optional custom path to Haar cascade XML for face detection")
+    p.add_argument(
+        "--duplicate-group-mode",
+        type=str,
+        choices=["all", "noncanonical"],
+        default="all",
+        help="When grouping near-duplicates, mark 'all' members as duplicates (default) or only 'noncanonical' members",
+    )
     # Reporting helpers
     p.add_argument("--print-scanned", action="store_true", help="Print files scanned successfully (grouped by extension)")
     p.add_argument("--print-ready", action="store_true", help="Print files planned to move/copy (grouped by extension)")

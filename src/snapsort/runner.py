@@ -156,6 +156,13 @@ def run(config: Config) -> int:
 
     # Group duplicates based on pHash
     groups, duplicate_map = _group_duplicates(results, threshold=config.duplicate_threshold)
+    # Optionally mark all members of a duplicate group as duplicates (not just non-canonical)
+    if getattr(config, "duplicate_group_mode", "all") == "all":
+        for g in groups:
+            if len(g.members) > 1:
+                for idx in g.members:
+                    p = results[idx].path
+                    duplicate_map[p] = True
     duplicate_groups = sum(1 for g in groups if len(g.members) > 1)
 
     # Plan moves
