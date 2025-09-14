@@ -3,7 +3,10 @@
 .vnev/
 venv/
 env/
-
+dist/
+build/
+.build/
 # Test data directory
 test-dir/
-sudo chown -R \"$USER\":staff ~/Desktop/Murthy
+snapsort-macos-arm64.zip
+

@@ -6,6 +6,23 @@ Overview
 - Blurred detection via variance of Laplacian (OpenCV) with a configurable threshold.
 - Priority between duplicate vs blurred classification is configurable.
 
+Binary Downloads (macOS)
+- Download prebuilt archives from GitHub Releases:
+  - Latest: https://github.com/usebetter/snapsort/releases/latest
+  - Choose the archive for your Mac:
+    - `snapsort-macos-arm64.7z` → Apple Silicon (M1/M2/M3)
+    - `snapsort-macos-x86_64.7z` → Intel Macs
+- Extract the 7z (Finder with The Unarchiver/KEKA or `7z x snapsort-macos-*.7z`).
+- Run from Terminal:
+  - `cd <extracted>/`
+  - `./snapsort --help`
+- If macOS blocks the app (Gatekeeper):
+  - Right-click the `snapsort` binary → Open (confirm once), or
+  - `xattr -dr com.apple.quarantine <extracted-folder>`
+- Notes:
+  - These bundles include Python and dependencies (no separate install needed).
+  - For Intel on Apple Silicon, use the x86_64 build only if you specifically need it.
+
 Requirements
 - Python 3.10+
 
