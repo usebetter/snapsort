@@ -91,6 +91,54 @@ build_one() {
   mkdir -p "dist/snapsort-$ARCH"
   mv dist/snapsort/* "dist/snapsort-$ARCH/" 2>/dev/null || true
 
+  # Optional: code sign the bundle if CODESIGN_ID is provided
+  if [[ -n "${CODESIGN_ID:-}" ]]; then
+    echo "[INFO] Code signing with identity: $CODESIGN_ID"
+    local ENTITLEMENTS_FILE="${ENTITLEMENTS_FILE:-scripts/entitlements.plist}"
+    if [[ ! -f "$ENTITLEMENTS_FILE" ]]; then
+      echo "[WARN] Entitlements file not found at $ENTITLEMENTS_FILE; proceeding without entitlements"
+    fi
+    # Sign nested libs first, then the main binary
+    while IFS= read -r -d '' f; do
+      codesign --force --options runtime --timestamp \
+        ${ENTITLEMENTS_FILE:+--entitlements "$ENTITLEMENTS_FILE"} \
+        --sign "$CODESIGN_ID" "$f"
+    done < <(find "dist/snapsort-$ARCH" -type f \( -name "*.dylib" -o -name "*.so" -o -name "*.pyd" \) -print0)
+
+    if [[ -x "dist/snapsort-$ARCH/snapsort" ]]; then
+      codesign --force --options runtime --timestamp \
+        ${ENTITLEMENTS_FILE:+--entitlements "$ENTITLEMENTS_FILE"} \
+        --sign "$CODESIGN_ID" "dist/snapsort-$ARCH/snapsort"
+    fi
+
+    codesign --verify -v "dist/snapsort-$ARCH" || true
+  fi
+
+  # Optional: notarize and staple if NOTARIZE is set
+  if [[ -n "${NOTARIZE:-}" ]]; then
+    local DMG="snapsort-macos-$ARCH.dmg"
+    echo "[INFO] Creating DMG $DMG for notarization"
+    rm -f "$DMG"
+    hdiutil create -fs APFS -volname "snapsort-$ARCH" -srcfolder "dist/snapsort-$ARCH" "$DMG"
+
+    if [[ -n "${NOTARY_KEY_ID:-}" && -n "${NOTARY_ISSUER_ID:-}" && -n "${NOTARY_PRIVATE_KEY_B64:-}" ]]; then
+      # Use App Store Connect API key in CI
+      KEYFILE=".build/AuthKey_${NOTARY_KEY_ID}.p8"
+      mkdir -p .build
+      echo "$NOTARY_PRIVATE_KEY_B64" | base64 --decode > "$KEYFILE"
+      echo "[INFO] Submitting to notarization with API key"
+      xcrun notarytool submit "$DMG" --key "$KEYFILE" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" --wait
+    elif [[ -n "${NOTARIZE_PROFILE:-}" ]]; then
+      echo "[INFO] Submitting to notarization with keychain profile: $NOTARIZE_PROFILE"
+      xcrun notarytool submit "$DMG" --keychain-profile "$NOTARIZE_PROFILE" --wait
+    else
+      echo "[WARN] NOTARIZE set but no credentials provided. Set NOTARIZE_PROFILE or NOTARY_KEY_ID/ISSUER_ID/PRIVATE_KEY_B64"
+    fi
+
+    echo "[INFO] Stapling ticket"
+    xcrun stapler staple -v "$DMG" || true
+  fi
+
   # Archive to 7z (or zip fallback)
   local ARCHIVE="snapsort-macos-$ARCH.7z"
   rm -f "$ARCHIVE"

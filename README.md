@@ -90,3 +90,6 @@ Troubleshooting
 - If OpenCV fails to read certain images, ensure files aren’t corrupt and that `opencv-python` is installed.
 - If RAW files (.nef) are skipped, ensure `rawpy` is installed; otherwise add `--extensions` to exclude `.nef`.
 - On Windows paths, quote arguments containing spaces.
+- First Run in MacOS,  apple Gateway may block to open the command
+--   Open System Settings → Privacy & Security. Scroll to  “Security” and look for “snapsort was blocked from use because it is not from an identified developer.”
+-- Alternatively, run in terminal, ```xattr -dr com.apple.quarantine /path/to/snapsort-arm64```. 
