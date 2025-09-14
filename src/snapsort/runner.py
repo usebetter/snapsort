@@ -136,6 +136,24 @@ def run(config: Config) -> int:
     if error_count:
         logger.warning("Encountered %d errors while reading images; they will be skipped.", error_count)
 
+    # Optional: print successfully scanned files grouped by extension
+    if config.print_scanned:
+        ok = [r for r in results if not r.error]
+        by_ext: Dict[str, List[Path]] = {}
+        for r in ok:
+            ext = r.path.suffix.lower()
+            by_ext.setdefault(ext, []).append(r.path)
+        if config.print_format == "csv":
+            logger.info("ext,path")
+            for ext, paths_ext in sorted(by_ext.items()):
+                for p in paths_ext:
+                    logger.info("%s,%s", ext, p)
+        else:
+            for ext, paths_ext in sorted(by_ext.items()):
+                logger.info("Scanned OK [%s]: %d", ext, len(paths_ext))
+                for p in paths_ext:
+                    logger.info("  %s", p)
+
     # Group duplicates based on pHash
     groups, duplicate_map = _group_duplicates(results, threshold=config.duplicate_threshold)
     duplicate_groups = sum(1 for g in groups if len(g.members) > 1)
@@ -172,6 +190,16 @@ def run(config: Config) -> int:
                         blur_reason = "partialBlurred"
                     elif blurred_faces > 0:
                         blur_reason = "slightlyBlurred"
+            else:
+                # No faces detected; fall back to image-level blur classification
+                if (r.blur_variance is not None) and (r.blur_variance < config.blur_threshold):
+                    blur_reason = "blurred"
+                    logger.debug(
+                        "No faces in %s; falling back to image blur: var=%.2f<thr=%.2f",
+                        r.path,
+                        r.blur_variance if r.blur_variance is not None else float("nan"),
+                        config.blur_threshold,
+                    )
 
         # Combine with duplicate precedence
         if is_dup and blur_reason:
@@ -193,6 +221,28 @@ def run(config: Config) -> int:
         dest = dest_dir / r.path.name
         plans.append(MovePlan(src=r.path, dest=dest, reason=reason))
 
+    # Optional: print per-file metrics (blur variance and face count) with final reason
+    if config.print_metrics:
+        if config.print_format == "csv":
+            logger.info("ext,path,blur_var,faces,reason")
+            reason_by_src = {pl.src: pl.reason for pl in plans}
+            for r in results:
+                if r.error:
+                    continue
+                ext = r.path.suffix.lower()
+                faces = len(r.faces_variances or [])
+                reason = reason_by_src.get(r.path, "")
+                logger.info("%s,%s,%.6f,%d,%s", ext, r.path, (r.blur_variance or float("nan")), faces, reason)
+        else:
+            logger.info("Per-file metrics (variance of Laplacian; faces; reason):")
+            reason_by_src = {pl.src: pl.reason for pl in plans}
+            for r in results:
+                if r.error:
+                    continue
+                faces = len(r.faces_variances or [])
+                reason = reason_by_src.get(r.path, "-")
+                logger.info("  %s  var=%.2f  faces=%d  reason=%s", r.path, (r.blur_variance or float("nan")), faces, reason)
+
     # Execute plans
     if not config.dry_run:
         # Create target folders up front
@@ -200,6 +250,23 @@ def run(config: Config) -> int:
         ensure_dir(partial_blur_dir)
         ensure_dir(slight_blur_dir)
         ensure_dir(dup_dir)
+
+    # Optional: print plans grouped by extension before executing
+    if config.print_ready:
+        by_ext: Dict[str, List[MovePlan]] = {}
+        for pl in plans:
+            ext = pl.src.suffix.lower()
+            by_ext.setdefault(ext, []).append(pl)
+        if config.print_format == "csv":
+            logger.info("ext,reason,src,dest")
+            for ext, pls in sorted(by_ext.items()):
+                for pl in pls:
+                    logger.info("%s,%s,%s,%s", ext, pl.reason, pl.src, pl.dest)
+        else:
+            for ext, pls in sorted(by_ext.items()):
+                logger.info("Ready to move [%s]: %d", ext, len(pls))
+                for pl in pls:
+                    logger.info("  %-9s: %s -> %s", pl.reason, pl.src, pl.dest)
 
     for plan in tqdm(plans, total=len(plans), desc=("Copying" if config.keep_originals else "Moving"), unit="file"):
         if config.dry_run:

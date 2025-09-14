@@ -41,6 +41,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--blur-on", type=str, choices=["faces", "image"], default="faces", help="Blur classification target: 'faces' or full 'image'")
     p.add_argument("--partial-blur-min-percent", type=float, default=50.0, help="Minimum percent of blurred faces to classify as partially blurred (100%% => fully blurred)")
     p.add_argument("--face-cascade", type=str, default=None, help="Optional custom path to Haar cascade XML for face detection")
+    # Reporting helpers
+    p.add_argument("--print-scanned", action="store_true", help="Print files scanned successfully (grouped by extension)")
+    p.add_argument("--print-ready", action="store_true", help="Print files planned to move/copy (grouped by extension)")
+    p.add_argument("--print-format", type=str, choices=["text", "csv"], default="text", help="Output format for printed lists")
+    p.add_argument("--print-metrics", action="store_true", help="Print per-file blur metrics and face counts")
     return p
 
 
@@ -54,6 +59,13 @@ def _setup_logging(level: str) -> Logger:
     )
     logger = logging.getLogger("snapsort")
     logger.setLevel(lvl)
+    # Reduce noise from very chatty libraries like Pillow's TIFF plugin
+    try:
+        logging.getLogger("PIL").setLevel(logging.WARNING)
+        logging.getLogger("PIL.TiffImagePlugin").setLevel(logging.WARNING)
+        logging.getLogger("PIL.Image").setLevel(logging.WARNING)
+    except Exception:
+        pass
     return logger
 
 

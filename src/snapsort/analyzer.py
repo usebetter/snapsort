@@ -80,11 +80,13 @@ def _load_image_rgb(path: Path) -> Image.Image:
     if is_raw_nef and rawpy is not None:  # type: ignore[name-defined]
         try:
             with rawpy.imread(str(path)) as raw:  # type: ignore[attr-defined]
+                # Use defaults closer to in-camera JPEG rendering for consistency
+                # - auto white balance on
+                # - enable auto brightness (default) by not setting no_auto_bright
+                # - 8-bit sRGB output
                 rgb = raw.postprocess(
                     use_auto_wb=True,
-                    no_auto_bright=True,
                     output_bps=8,
-                    gamma=(2.2, 4.5),
                 )
             # rgb is HxWx3 uint8
             return Image.fromarray(rgb, mode="RGB")
@@ -96,6 +98,27 @@ def _load_image_rgb(path: Path) -> Image.Image:
         return img.convert("RGB")
 
 
+def _normalize_gray_for_blur(gray: np.ndarray, *, target_max_side: int = 2048) -> np.ndarray:
+    """Resize and lightly denoise grayscale for a stable blur metric.
+
+    - Resizes so the longer side is at most `target_max_side` to mitigate
+      resolution-driven variance differences (e.g., large NEFs vs small JPEGs).
+    - Applies a small Gaussian blur to reduce sensor/demosaic noise impact.
+    """
+    if gray.ndim != 2:
+        raise ValueError("Expected single-channel grayscale image")
+    h, w = gray.shape
+    max_side = max(h, w)
+    if max_side > target_max_side:
+        scale = target_max_side / float(max_side)
+        new_w = max(1, int(round(w * scale)))
+        new_h = max(1, int(round(h * scale)))
+        gray = cv2.resize(gray, (new_w, new_h), interpolation=cv2.INTER_AREA)
+    # Light denoise to even out RAW vs JPEG processing differences
+    gray = cv2.GaussianBlur(gray, (3, 3), 0)
+    return gray
+
+
 def analyze_image(path: Path, *, do_face_analysis: bool = True) -> AnalysisResult:
     try:
         img = _load_image_rgb(path)
@@ -104,7 +127,8 @@ def analyze_image(path: Path, *, do_face_analysis: bool = True) -> AnalysisResul
         # Convert to grayscale numpy for blur metric
         arr = np.array(img)
         gray = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY)
-        variance = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+        gray_norm = _normalize_gray_for_blur(gray)
+        variance = float(cv2.Laplacian(gray_norm, cv2.CV_64F).var())
         faces_variances: Optional[list[float]] = None
         if do_face_analysis:
             faces_variances = []
@@ -114,7 +138,8 @@ def analyze_image(path: Path, *, do_face_analysis: bool = True) -> AnalysisResul
                 faces = cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
                 for (x, y, w, h) in faces:
                     roi = gray[y : y + h, x : x + w]
-                    fv = float(cv2.Laplacian(roi, cv2.CV_64F).var())
+                    roi_n = _normalize_gray_for_blur(roi)
+                    fv = float(cv2.Laplacian(roi_n, cv2.CV_64F).var())
                     faces_variances.append(fv)
             else:
                 faces_variances = []
