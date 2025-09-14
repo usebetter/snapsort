@@ -29,8 +29,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--extensions",
         type=str,
-        default=".jpg,.jpeg",
-        help="Comma-separated list of allowed file extensions (e.g., .jpg,.jpeg)",
+        default=".jpg,.jpeg,.nef",
+        help="Comma-separated list of allowed file extensions (e.g., .jpg,.jpeg,.nef)",
     )
     p.add_argument("--recursive", action="store_true", help="Include subdirectories recursively")
     p.add_argument("--dry-run", action="store_true", help="Show planned moves but do not modify files")

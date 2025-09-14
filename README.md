@@ -1,7 +1,7 @@
 snapSort — Python image organizer (MVP)
 
 Overview
-- Organizes .jpg/.jpeg images by moving or copying them into subfolders based on analysis.
+- Organizes .jpg/.jpeg (and optionally RAW like .nef) images by moving or copying them into subfolders based on analysis.
 - Duplicate/near-duplicate detection via perceptual hashing (pHash) from imagehash/Pillow.
 - Blurred detection via variance of Laplacian (OpenCV) with a configurable threshold.
 - Priority between duplicate vs blurred classification is configurable.
@@ -17,6 +17,17 @@ Installation
   source .venv/bin/activate  # Windows: .venv\Scripts\activate
   pip install -r requirements.txt
   pip install -e .
+
+RAW support (.nef)
+- The tool can analyze Nikon RAW `.nef` files. Install the optional decoder:
+
+  bash
+  pip install rawpy
+
+- Then include `.nef` in extensions (default already includes it):
+
+  bash
+  snapsort --input-dir /path --extensions .jpg,.jpeg,.nef
 
 Usage
 - Basic:
@@ -35,7 +46,7 @@ Usage
     --partial-blur-folder partialBlurred \
     --slight-blur-folder slightlyBlurred \
     --duplicate-folder duplicate \
-    --extensions .jpg,.jpeg \
+    --extensions .jpg,.jpeg,.nef \
     --recursive \
     --output-dir /path/to/output \
     --max-workers 8 \
@@ -60,4 +71,5 @@ Notes
 
 Troubleshooting
 - If OpenCV fails to read certain images, ensure files aren’t corrupt and that `opencv-python` is installed.
+- If RAW files (.nef) are skipped, ensure `rawpy` is installed; otherwise add `--extensions` to exclude `.nef`.
 - On Windows paths, quote arguments containing spaces.

@@ -30,7 +30,8 @@ class Config:
     partial_blur_folder_name: str = "partialBlurred"
     slight_blur_folder_name: str = "slightlyBlurred"
     duplicate_folder_name: str = "duplicate"
-    allowed_extensions: Tuple[str, ...] = (".jpg", ".jpeg")
+    # Include .nef (Nikon RAW) by default; additional RAWs can be added via --extensions
+    allowed_extensions: Tuple[str, ...] = (".jpg", ".jpeg", ".nef")
     recursive: bool = True
     dry_run: bool = False
     max_workers: int | None = None
