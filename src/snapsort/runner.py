@@ -157,7 +157,8 @@ def run(config: Config) -> int:
     # Group duplicates based on pHash
     groups, duplicate_map = _group_duplicates(results, threshold=config.duplicate_threshold)
     # Optionally mark all members of a duplicate group as duplicates (not just non-canonical)
-    if getattr(config, "duplicate_group_mode", "all") == "all":
+    # Default behavior is 'noncanonical' via config to avoid moving originals
+    if getattr(config, "duplicate_group_mode", "noncanonical") == "all":
         for g in groups:
             if len(g.members) > 1:
                 for idx in g.members:

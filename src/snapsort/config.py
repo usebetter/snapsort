@@ -46,7 +46,8 @@ class Config:
     # Optional override for face cascade path; if None, use OpenCV builtin
     face_cascade_path: Path | None = None
     # Duplicate grouping behavior: 'all' or 'noncanonical'
-    duplicate_group_mode: str = "all"
+    # Default to 'noncanonical' so only non-canonical members are moved as duplicates
+    duplicate_group_mode: str = "noncanonical"
     # Reporting helpers
     print_scanned: bool = False
     print_ready: bool = False
@@ -96,7 +97,8 @@ class Config:
             blur_on=str(getattr(args, "blur_on", "faces")).lower(),
             partial_blur_min_percent=float(getattr(args, "partial_blur_min_percent", 50.0)),
             face_cascade_path=face_cascade_path,
-            duplicate_group_mode=str(getattr(args, "duplicate_group_mode", "all")),
+            # Default to 'noncanonical' to avoid moving canonical/originals when duplicates are found
+            duplicate_group_mode=str(getattr(args, "duplicate_group_mode", "noncanonical")),
             print_scanned=bool(getattr(args, "print_scanned", False)),
             print_ready=bool(getattr(args, "print_ready", False)),
             print_format=str(getattr(args, "print_format", "text")),

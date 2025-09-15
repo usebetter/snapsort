@@ -180,3 +180,92 @@ typer>=0.12.0   # or use argparse; if using argparse, omit this line
 5. (Optional) Basic tests for analyzer and config.
 
 **Definition of Done**: Running `snapsort --input-dir <folder>` on a directory of JPG/JPEG images results in all blurred images moved to the configured blurred folder and all duplicates/near-duplicates moved to the configured duplicate folder, with progress logs and a final summary; no values hardcoded outside the `Config` class; CLI options override config.
+
+---
+
+# Extension: AI‑Based Local Blur Detection (Prompt)
+
+## Objective
+Augment snapSort with on‑device, AI‑based blur detection that is more perceptually aligned than variance of Laplacian. The solution must run locally (no network), use OpenCV and open‑source models (e.g., BRISQUE, CPBD, small ONNX CNNs), and remain configurable and performant on CPU‑only machines.
+
+## Scope
+- Keep existing duplicate detection and precedence intact; only extend blur detection.
+- Support multiple blur methods selectable via CLI and config.
+- Keep face/subject awareness: score faces or salient subjects more heavily than background when requested.
+
+## Methods To Support
+- BRISQUE (no‑reference IQA) via `opencv-contrib` quality module.
+- CPBD (Cumulative Probability of Blur Detection) via `pycpbd`.
+- Lightweight CNN classifier (ONNXRuntime) for sharp vs blurred.
+- Hybrid scoring that combines two or more methods into a normalized sharpness score.
+
+## CLI & Config Additions
+- `--blur-method {laplacian,brisque,cpbd,cnn,hybrid}` (default: `laplacian` to preserve current behavior).
+- `--ai-threshold <float>`: decision threshold on a normalized 0–1 sharpness scale (higher = sharper). Only used for `brisque|cpbd|cnn|hybrid`.
+- `--ai-model <path>`: path to ONNX model for `cnn`/`hybrid`.
+- `--ai-backend {onnx,opencv}`: inference backend selection (default `onnx`).
+- `--subject-detect {none,haar,face-yolo,object-yolo}` (default: `haar` when `--blur-on faces`).
+- `--model-path <dir>`: directory containing detector/quality model files.
+- `--auto-calibrate`: derive `--ai-threshold` from a sample of images (e.g., 20th percentile of sharp set).
+- Extend `Config` accordingly with sensible defaults and optional install of AI extras.
+
+## Dependencies & Models
+- Optional extra `snapsort[ai]` installs:
+  - `opencv-contrib-python` (BRISQUE + DNN support)
+  - `onnxruntime` (CPU inference)
+  - `pycpbd` (CPBD metric)
+- Bundle or download model files into `models/`:
+  - BRISQUE: `brisque_model_live.yml`, `brisque_range_live.yml`.
+  - Face YOLO (optional): small ONNX face detector.
+  - Object YOLO (optional): tiny ONNX model for person/animal boxes.
+- Provide `scripts/download_models.sh` to fetch defaults.
+
+## Analyzer Implementation
+- Add scoring functions:
+  - Laplacian: keep existing variance; map to [0,1] via monotonic normalization for hybrid use.
+  - BRISQUE: compute and invert to sharpness in [0,1]; handle per‑ROI scoring.
+  - CPBD: returns [0,1] (higher = sharper); average or max across ROIs.
+  - CNN: preprocess (resize, normalize), infer with ONNXRuntime; output `p_sharp ∈ [0,1]`.
+- ROI logic (subject/face aware):
+  - When `--blur-on faces`, detect faces (Haar default; YOLO optional) and compute per‑face scores; aggregate by max or area‑weighted mean.
+  - When `--blur-on image`, compute full‑frame score.
+- Hybrid method: combine normalized scores, e.g., `score = mean(z(Tenengrad|Laplacian_norm), z(CPBD), z(CNN))` then sigmoid to [0,1].
+- Extend `AnalysisResult` with `ai_score: Optional[float]` and `faces_ai_scores: Optional[list[float]]`.
+
+## Runner Integration
+- Map `ai_score` to categories:
+  - `ai_score < T` → blurred
+  - Faces present: compute percent of faces with `face_score < T` for partial/slight logic (respect `--partial-blur-min-percent`).
+- Preserve duplicate precedence: when both duplicate and blur apply, honor `prefer_duplicate_over_blur`.
+- Ensure CSV metrics (`--print-metrics`) include: `ai_score`, per‑face count, method used.
+
+## Calibration & Evaluation
+- Implement `--auto-calibrate`:
+  - Sample N images (configurable), compute scores, estimate threshold as e.g., the 20th percentile of scores in a user‑marked “sharp” subset or using Otsu/K‑means split.
+- Provide `tools/eval_blur.py`:
+  - Input: CSV with image path and ground truth label (sharp/blur).
+  - Output: confusion matrix, precision/recall/F1 per method, ROC/AUC, threshold suggestion.
+
+## Performance & Reliability
+- Cap longer image side to ≤ 2048px (existing behavior); reuse per‑thread model sessions (thread‑locals).
+- Lazy‑load models; fail gracefully if a method is selected but not installed (log actionable hints).
+- Keep memory footprint modest; avoid GPU requirements.
+
+## Packaging & Docs
+- Optional extras: `pip install snapsort[ai]` toggles AI features.
+- README updates:
+  - Describe methods, tradeoffs, thresholds, and examples.
+  - Document model download script and manual placement.
+  - Show `--print-metrics` CSV fields including `ai_score`.
+
+## Acceptance Criteria (AI Extension)
+- Selecting `--blur-method brisque|cpbd|cnn|hybrid` runs fully offline and produces an `ai_score` per image (and per‑face when applicable).
+- Thresholding yields blurred/partial/slight categories consistent with CLI flags, with duplicate precedence preserved.
+- Missing dependency/model leads to a clear error with installation/download guidance; fallback to Laplacian only if explicitly allowed by a `--fallback-classic` flag.
+- `--auto-calibrate` outputs the chosen threshold and uses it for the current run; value appears in summary logs.
+- Metrics CSV includes: `ext,path,blur_var,ai_score,faces,method,reason`.
+
+## Nice‑To‑Have Next
+- Subject detection via tiny YOLO to weight non‑face subjects (wildlife, sports).
+- Per‑class thresholds (faces vs background) and eye‑region emphasis.
+- Small labeled sample and unit tests for scorers with golden outputs.

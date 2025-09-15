@@ -45,8 +45,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--duplicate-group-mode",
         type=str,
         choices=["all", "noncanonical"],
-        default="all",
-        help="When grouping near-duplicates, mark 'all' members as duplicates (default) or only 'noncanonical' members",
+        default="noncanonical",
+        help=(
+            "When grouping near-duplicates, mark 'noncanonical' members as duplicates (default) "
+            "or 'all' members. Use 'all' only if you truly want the canonical/original moved too."
+        ),
     )
     # Reporting helpers
     p.add_argument("--print-scanned", action="store_true", help="Print files scanned successfully (grouped by extension)")
