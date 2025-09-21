@@ -23,6 +23,9 @@ class AnalysisResult:
     path: Path
     phash: Optional[imagehash.ImageHash]
     blur_variance: Optional[float]
+    width: Optional[int] = None
+    height: Optional[int] = None
+    orientation: Optional[str] = None
     faces_variances: Optional[list[float]] = None
     error: Optional[str] = None
 
@@ -122,6 +125,8 @@ def _normalize_gray_for_blur(gray: np.ndarray, *, target_max_side: int = 2048) -
 def analyze_image(path: Path, *, do_face_analysis: bool = True) -> AnalysisResult:
     try:
         img = _load_image_rgb(path)
+        width, height = img.size
+        orientation = "landscape" if width > height else "portrait"
         # Compute pHash
         ph = imagehash.phash(img)
         # Convert to grayscale numpy for blur metric
@@ -143,7 +148,15 @@ def analyze_image(path: Path, *, do_face_analysis: bool = True) -> AnalysisResul
                     faces_variances.append(fv)
             else:
                 faces_variances = []
-        return AnalysisResult(path=path, phash=ph, blur_variance=variance, faces_variances=faces_variances)
+        return AnalysisResult(
+            path=path,
+            phash=ph,
+            blur_variance=variance,
+            width=width,
+            height=height,
+            orientation=orientation,
+            faces_variances=faces_variances,
+        )
     except (UnidentifiedImageError, OSError) as e:
         return AnalysisResult(path=path, phash=None, blur_variance=None, error=str(e))
     except Exception as e:  # Be resilient to unexpected decoder errors

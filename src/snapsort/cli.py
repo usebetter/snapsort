@@ -27,6 +27,13 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--slight-blur-folder", type=str, default="slightlyBlurred", help="Folder name for slightly blurred images")
     p.add_argument("--duplicate-folder", type=str, default="duplicate", help="Folder name for duplicate images")
     p.add_argument(
+        "--split-orientation",
+        type=str,
+        choices=["yes", "no"],
+        default="yes",
+        help="Split images into orientation folders (default: yes).",
+    )
+    p.add_argument(
         "--extensions",
         type=str,
         default=".jpg,.jpeg,.nef",

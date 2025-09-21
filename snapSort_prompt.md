@@ -1,4 +1,4 @@
-# Build Task: **snapSort** – Python image organizer (MVP)
+﻿# Build Task: **snapSort** – Python image organizer (MVP)
 
 ## Goal
 Create a Python project called **snapSort** that reorganizes `.jpg`/`.jpeg` images in a given directory into subfolders based on analysis:
@@ -269,3 +269,25 @@ Augment snapSort with on‑device, AI‑based blur detection that is more percep
 - Subject detection via tiny YOLO to weight non‑face subjects (wildlife, sports).
 - Per‑class thresholds (faces vs background) and eye‑region emphasis.
 - Small labeled sample and unit tests for scorers with golden outputs.
+## Orientation Sorting Prompt
+
+**Goal**
+Create a CLI enhancement that optionally sorts images into separate folders based on their orientation (landscape vs portrait).
+
+**Functional Requirements**
+- Accept a command-line argument such as `--split-orientation yes|no` (default `yes`).
+- When invoked with `--split-orientation yes`, create (if necessary) sibling folders named `landscape` and `portrait` under the chosen output directory.
+- When `--split-orientation yes`, route images into their orientation folders before blur/duplicate handling so final blurred/duplicate destinations live under that orientation (e.g., `landscape/blurred`, `portrait/duplicate`).
+- Traverse the target directory for supported image files; classify each image by comparing width vs height.
+  - Width > height -> move/copy to `landscape/`.
+  - Height > width (or square) -> move/copy to `portrait/`.
+- Respect existing config behaviors (e.g., `--output-dir`, `--keep-originals`, `--dry-run`) when performing moves/copies.
+- Emit a clear summary of how many files were routed to each orientation folder.
+- If `--split-orientation` is anything other than affirmative (e.g., omitted or `no`), exit immediately after logging that the feature is disabled.
+
+**Implementation Notes**
+- Reuse the current discovery pipeline and extension filters; allow double-processing files already routed for blur/duplicate handling.
+- Expose a `Config.split_orientation` boolean that the CLI sets from the argument.
+- When the feature is active, perform orientation sorting first and treat that orientation folder as the base target for all subsequent blurred/duplicate routing to keep the hierarchy consistent.
+- Ensure folder creation is idempotent and happens only when the feature is activated.
+- Guard against non-image files or unreadable images with warning logs rather than hard failures.

@@ -38,6 +38,9 @@ class Config:
     log_level: str = "INFO"
     output_dir: Path | None = None
     keep_originals: bool = False
+    split_orientation: bool = True
+    landscape_folder_name: str = "landscape"
+    portrait_folder_name: str = "portrait"
     prefer_duplicate_over_blur: bool = True
     # Blur target: 'faces' or 'image'. For this project default to 'faces'.
     blur_on: str = "faces"
@@ -78,6 +81,10 @@ class Config:
             Path(args.face_cascade).expanduser().resolve() if getattr(args, "face_cascade", None) else None
         )
 
+        split_orientation_arg = str(getattr(args, "split_orientation", "yes")).strip().lower()
+        split_orientation = split_orientation_arg in {"yes", "y", "true", "1", "on"}
+        landscape_folder_name = str(getattr(args, 'landscape_folder', cls.landscape_folder_name))
+        portrait_folder_name = str(getattr(args, 'portrait_folder', cls.portrait_folder_name))
         return cls(
             input_dir=input_dir,
             duplicate_threshold=int(args.duplicate_threshold),
@@ -93,6 +100,9 @@ class Config:
             log_level=str(args.log_level).upper(),
             output_dir=output_dir,
             keep_originals=bool(args.keep_originals),
+            split_orientation=split_orientation,
+            landscape_folder_name=landscape_folder_name,
+            portrait_folder_name=portrait_folder_name,
             prefer_duplicate_over_blur=True,  # MVP default; could be exposed later
             blur_on=str(getattr(args, "blur_on", "faces")).lower(),
             partial_blur_min_percent=float(getattr(args, "partial_blur_min_percent", 50.0)),

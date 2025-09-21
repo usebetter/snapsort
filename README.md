@@ -2,6 +2,7 @@ snapSort — Python image organizer (MVP)
 
 Overview
 - Organizes .jpg/.jpeg (and optionally RAW like .nef) images by moving or copying them into subfolders based on analysis.
+- Splits photos into orientation folders (`landscape/`, `portrait/`) before blur/duplicate routing (disable with `--split-orientation no`).
 - Duplicate/near-duplicate detection via perceptual hashing (pHash) from imagehash/Pillow.
 - Blurred detection via variance of Laplacian (OpenCV) with a configurable threshold.
 - Priority between duplicate vs blurred classification is configurable.
@@ -63,6 +64,7 @@ Usage
     --partial-blur-folder partialBlurred \
     --slight-blur-folder slightlyBlurred \
     --duplicate-folder duplicate \
+    --split-orientation yes \\
     --extensions .jpg,.jpeg,.nef \
     --recursive \
     --output-dir /path/to/output \
@@ -71,7 +73,10 @@ Usage
     --partial-blur-min-percent 50 \
     --dry-run
 
+- Orientation sorting is enabled by default; pass `--split-orientation no` to skip creating `landscape/` and `portrait/` folders.
+
 How it works
+- Orientation-first when enabled: files move to `landscape/` or `portrait/` before blur/duplicate decisions, so blurred/duplicate outputs stay nested under their orientation folder.
 - Duplicate detection via perceptual hashing (pHash) with a Hamming-distance threshold.
 - Blur detection via variance of Laplacian with a configurable threshold.
 - Face-aware blur: with `--blur-on faces` (default), blur decisions are based on human faces only:

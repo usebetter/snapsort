@@ -61,17 +61,44 @@ def run(config: Config) -> int:
     partial_blur_dir = base_output / config.partial_blur_folder_name
     slight_blur_dir = base_output / config.slight_blur_folder_name
     dup_dir = base_output / config.duplicate_folder_name
-    exclude = []
-    # Only exclude if they are within the input directory
-    for d in (blur_dir, partial_blur_dir, slight_blur_dir, dup_dir):
-        try:
-            if d.resolve().is_relative_to(config.input_dir.resolve()):
-                exclude.append(d)
-        except AttributeError:
-            # py310+ has is_relative_to; safeguard for compatibility
-            if str(d.resolve()).startswith(str(config.input_dir.resolve())):
-                exclude.append(d)
+    input_root = config.input_dir.resolve()
+    exclude: List[Path] = []
 
+    def _add_exclude(candidate: Path) -> None:
+        if candidate in exclude:
+            return
+        try:
+            resolved = candidate.resolve()
+        except Exception:
+            resolved = candidate
+        try:
+            if resolved.is_relative_to(input_root):
+                exclude.append(candidate)
+                return
+        except AttributeError:
+            if str(resolved).startswith(str(input_root)):
+                exclude.append(candidate)
+
+    for d in (blur_dir, partial_blur_dir, slight_blur_dir, dup_dir):
+        _add_exclude(d)
+
+    orientation_dirs: Dict[str, Path] = {}
+    if config.split_orientation:
+        orientation_dirs = {
+            "landscape": base_output / config.landscape_folder_name,
+            "portrait": base_output / config.portrait_folder_name,
+        }
+        for orient_dir in orientation_dirs.values():
+            _add_exclude(orient_dir)
+            for sub in (
+                config.blur_folder_name,
+                config.partial_blur_folder_name,
+                config.slight_blur_folder_name,
+                config.duplicate_folder_name,
+            ):
+                _add_exclude(orient_dir / sub)
+    else:
+        orientation_dirs = {}
     # Configure face cascade if provided
     if config.face_cascade_path is not None:
         try:
@@ -172,10 +199,24 @@ def run(config: Config) -> int:
     partial_blurred_count = 0
     slightly_blurred_count = 0
     duplicates_count = 0
+    orientation_counts = {"landscape": 0, "portrait": 0} if config.split_orientation else None
 
     for r in results:
         if r.error:
             continue
+
+        orientation_label: Optional[str] = None
+        orientation_dir = base_output
+        if config.split_orientation:
+            orientation_value = (r.orientation or "portrait").lower()
+            orientation_label = "landscape" if orientation_value == "landscape" else "portrait"
+            if orientation_label == "landscape":
+                orientation_dir = orientation_dirs.get("landscape", base_output / config.landscape_folder_name)
+            else:
+                orientation_dir = orientation_dirs.get("portrait", base_output / config.portrait_folder_name)
+            if orientation_counts is not None:
+                orientation_counts[orientation_label] += 1
+
         is_dup = duplicate_map.get(r.path, False)
         reason: Optional[str] = None
 
@@ -216,18 +257,28 @@ def run(config: Config) -> int:
             reason = "duplicate"
         elif blur_reason:
             reason = blur_reason
-        if not reason:
-            continue
+
+        base_special_dir = orientation_dir if config.split_orientation else base_output
+        plan_reason: Optional[str] = reason
+        dest_dir: Optional[Path] = None
         if reason == "duplicate":
-            dest_dir = dup_dir
+            dest_dir = base_special_dir / config.duplicate_folder_name
         elif reason == "blurred":
-            dest_dir = blur_dir
+            dest_dir = base_special_dir / config.blur_folder_name
         elif reason == "partialBlurred":
-            dest_dir = partial_blur_dir
-        else:  # slightlyBlurred
-            dest_dir = slight_blur_dir
+            dest_dir = base_special_dir / config.partial_blur_folder_name
+        elif reason == "slightlyBlurred":
+            dest_dir = base_special_dir / config.slight_blur_folder_name
+        elif config.split_orientation:
+            plan_reason = orientation_label or "orientation"
+            dest_dir = orientation_dir
+        else:
+            continue
+
+        if dest_dir is None:
+            continue
         dest = dest_dir / r.path.name
-        plans.append(MovePlan(src=r.path, dest=dest, reason=reason))
+        plans.append(MovePlan(src=r.path, dest=dest, reason=plan_reason or ""))
 
     # Optional: print per-file metrics (blur variance and face count) with final reason
     if config.print_metrics:
@@ -254,10 +305,9 @@ def run(config: Config) -> int:
     # Execute plans
     if not config.dry_run:
         # Create target folders up front
-        ensure_dir(blur_dir)
-        ensure_dir(partial_blur_dir)
-        ensure_dir(slight_blur_dir)
-        ensure_dir(dup_dir)
+        target_dirs = {plan.dest.parent for plan in plans}
+        for target in sorted(target_dirs, key=lambda p: str(p).lower()):
+            ensure_dir(target)
 
     # Optional: print plans grouped by extension before executing
     if config.print_ready:
@@ -314,4 +364,10 @@ def run(config: Config) -> int:
         error_count,
     )
 
+    if config.split_orientation and orientation_counts is not None:
+        logger.info(
+            "Orientation totals: landscape=%d, portrait=%d",
+            orientation_counts["landscape"],
+            orientation_counts["portrait"],
+        )
     return 0
