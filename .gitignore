@@ -9,4 +9,5 @@ build/
 # Test data directory
 test-dir/
 snapsort-macos-arm64.zip
-
+__pycache__/
+_py_cache_/

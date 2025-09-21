@@ -5,6 +5,11 @@ from pathlib import Path
 from typing import Iterable, Tuple
 
 
+DEFAULT_ALLOWED_EXTENSIONS: Tuple[str, ...] = (".jpg", ".jpeg", ".nef")
+DEFAULT_LANDSCAPE_FOLDER_NAME = "landscape"
+DEFAULT_PORTRAIT_FOLDER_NAME = "portrait"
+
+
 def _parse_extensions(exts: str | Iterable[str]) -> Tuple[str, ...]:
     if isinstance(exts, str):
         parts = [e.strip() for e in exts.split(",") if e.strip()]
@@ -31,7 +36,7 @@ class Config:
     slight_blur_folder_name: str = "slightlyBlurred"
     duplicate_folder_name: str = "duplicate"
     # Include .nef (Nikon RAW) by default; additional RAWs can be added via --extensions
-    allowed_extensions: Tuple[str, ...] = (".jpg", ".jpeg", ".nef")
+    allowed_extensions: Tuple[str, ...] = DEFAULT_ALLOWED_EXTENSIONS
     recursive: bool = True
     dry_run: bool = False
     max_workers: int | None = None
@@ -39,8 +44,8 @@ class Config:
     output_dir: Path | None = None
     keep_originals: bool = False
     split_orientation: bool = True
-    landscape_folder_name: str = "landscape"
-    portrait_folder_name: str = "portrait"
+    landscape_folder_name: str = DEFAULT_LANDSCAPE_FOLDER_NAME
+    portrait_folder_name: str = DEFAULT_PORTRAIT_FOLDER_NAME
     prefer_duplicate_over_blur: bool = True
     # Blur target: 'faces' or 'image'. For this project default to 'faces'.
     blur_on: str = "faces"
@@ -70,7 +75,7 @@ class Config:
         allowed_extensions = (
             _parse_extensions(args.extensions)
             if getattr(args, "extensions", None)
-            else cls.allowed_extensions
+            else DEFAULT_ALLOWED_EXTENSIONS
         )
 
         output_dir = (
@@ -81,10 +86,16 @@ class Config:
             Path(args.face_cascade).expanduser().resolve() if getattr(args, "face_cascade", None) else None
         )
 
+        def _folder_override(attr_name: str, default_value: str) -> str:
+            value = getattr(args, attr_name, None)
+            if value in (None, ""):
+                return default_value
+            return str(value)
+
         split_orientation_arg = str(getattr(args, "split_orientation", "yes")).strip().lower()
         split_orientation = split_orientation_arg in {"yes", "y", "true", "1", "on"}
-        landscape_folder_name = str(getattr(args, 'landscape_folder', cls.landscape_folder_name))
-        portrait_folder_name = str(getattr(args, 'portrait_folder', cls.portrait_folder_name))
+        landscape_folder_name = _folder_override("landscape_folder", DEFAULT_LANDSCAPE_FOLDER_NAME)
+        portrait_folder_name = _folder_override("portrait_folder", DEFAULT_PORTRAIT_FOLDER_NAME)
         return cls(
             input_dir=input_dir,
             duplicate_threshold=int(args.duplicate_threshold),
